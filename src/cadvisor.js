@@ -7,6 +7,7 @@ var ook = require('./ook');
 var http = require('http');
 var sys = require('sys');
 var exec = require('child_process').exec;
+var nodemailer = require('nodemailer');
 
 var advisor = ook.Class().mixin(ook.observable);
 advisor.prototype._construct = function()
@@ -32,12 +33,36 @@ advisor.prototype._construct = function()
         res.writeHead(200, {'Content-Type': 'text/plain'});
         res.end('ok\n');
     };
+    
+    var alert = function(message)
+    {
+		nodemailer.SMTP = {
+			host: 'nsiautostore.com'
+		};
+
+	    // send an e-mail
+	    nodemailer.send_mail(
+	        // e-mail options
+	        {
+	            sender: 'danny.graham@nsius.com',
+	            to:'good.midget@gmail.com',
+	            subject:'Service Monitor Alert!',
+	            html: '<p><b>ALERT:</b> a service has failed</p><br/><pre>' + message + '</pre>',
+	            body:'ALERT: A service has failed!' + "\n\n" + message
+	        },
+	        // callback function
+	        function(error, success){
+	            console.log('Message ' + success ? 'sent' : 'failed');
+			}
+		);	
+	};
 
 	this.registerAgent = function(agent)
 	{
 		var l = {
 			result: function(e){
 				console.log(e.agent.name + " - " + e.type + " - " + e.result);
+				if (e.result == 200) alert(e.agent.name + " - " + e.type + " - " + e.result);
 			}
 		};
 		agent.addListener('result',l.result);
