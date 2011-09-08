@@ -14,12 +14,22 @@ advisor.prototype._construct = function()
   var server = function()
   {
       http.createServer(function (req, res) {
-        console.log(req.url);
-        res.writeHead(200, {'Content-Type': 'text/plain'});
-        res.end('ok\n');
+        handleRequest(req, res);
     }).listen(process.env.C9_PORT, "0.0.0.0");
     console.log('Server running at http://service-monitor.dermidgen.cloud9ide.com');
   };
+  
+    var handleRequest = function(req, res)
+    {
+        console.log(req.url);
+        respond(res);
+    };
+  
+    var respond = function(res)
+    {
+        res.writeHead(200, {'Content-Type': 'text/plain'});
+        res.end('ok\n');
+    };
   
   server();
 };
