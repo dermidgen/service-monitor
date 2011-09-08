@@ -3,10 +3,10 @@
  * monitoring agent.
  */
  
-require('./ook');
+var ook = require('./ook');
 var http = require('http');
 
-var advisor = ook.Class();
+var advisor = ook.Class().mixin(ook.observable);
 advisor.prototype._construct = function()
 {
   console.log('Server Starting');
@@ -23,15 +23,17 @@ advisor.prototype._construct = function()
   
   server();
 };
+
 advisor.instance = null;
 advisor.getInstance = function()
 {
   if (!advisor.instance) advisor.instance = new advisor();
   return advisor.instance;
 };
+
 advisor.main = function()
 {
     var app = advisor.getInstance();
-    
 };
 
+advisor.main();
