@@ -5,7 +5,7 @@
  
 var ook = require('./ook');
 var http = require('http');
-var sys = require('sys');
+var sys = require('util');
 var exec = require('child_process').exec;
 var nodemailer = require('nodemailer');
 
@@ -18,7 +18,7 @@ advisor.prototype._construct = function()
   {
       http.createServer(function (req, res) {
         handleRequest(req, res);
-    }).listen(process.env.C9_PORT, "0.0.0.0");
+    }).listen(5200, "0.0.0.0");
     console.log('Server running at http://service-monitor.dermidgen.cloud9ide.com');
   };
   
@@ -36,15 +36,15 @@ advisor.prototype._construct = function()
     
     var alert = function(message)
     {
-		nodemailer.SMTP = {
-			host: 'nsiautostore.com'
-		};
+		nodemailer.sendmail = true;
+
+		console.log('ALERT');
 
 	    // send an e-mail
 	    nodemailer.send_mail(
 	        // e-mail options
 	        {
-	            sender: 'danny.graham@nsius.com',
+	            sender: 'dgraham@nsiautostore.com',
 	            to:'good.midget@gmail.com',
 	            subject:'Service Monitor Alert!',
 	            html: '<p><b>ALERT:</b> a service has failed</p><br/><pre>' + message + '</pre>',
@@ -61,8 +61,8 @@ advisor.prototype._construct = function()
 	{
 		var l = {
 			result: function(e){
-				console.log(e.agent.name + " - " + e.type + " - " + e.result);
-				if (e.result == 200) alert(e.agent.name + " - " + e.type + " - " + e.result);
+				//console.log(e.agent.name + " - " + e.type + " - " + e.result);
+				if (e.success === false) alert(e.agent.name + " - " + e.type + " - " + e.result);
 			}
 		};
 		agent.addListener('result',l.result);
@@ -82,7 +82,9 @@ advisor.getInstance = function()
 advisor.agent = ook.Class().mixin(ook.observable);
 advisor.agent.type = {
 	HTTP: 0x001,
-	PING: 0x002
+	PING: 0x002,
+	CURL: 0x003,
+	FTP:  0x004
 };
 advisor.agent.prototype._construct = function(opts)
 {
@@ -92,27 +94,42 @@ advisor.agent.prototype._construct = function(opts)
 	
 	var freq = 60000;
 	var self = this;
+
+	var taskOptions = opts;
 	
 	var tasks = {
 		http: function(uri,opts) {
 			if (!opts) opts = {};
 			
-			setInterval(function(){
-				http.get({
-					host: self.uri.host,
-					port: self.uri.port,
-					path: self.uri.path
-					},
-					function(res){
-						self.dispatch({
-							type: 'result',
-							agent: self,
-							opts: opts,
-							result: res.statusCode
-						});		
-					});
-				}, opts.freq || freq);
-				
+			http.get({
+				host: self.uri.host,
+				port: self.uri.port,
+				path: self.uri.path
+				},
+				function(res){
+					var success = (res.statusCode == 200) ? true : false;
+					self.dispatch({
+						type: 'result',
+						agent: self,
+						opts: opts,
+						success: success,
+						result: res.statusCode
+				});		
+			});	
+		},
+		curl: function(uri,opts) {
+			var args = taskOptions.args || "";
+			var cmd = "curl \""+uri+"\" -s --head "+args;
+			exec(cmd,function(err, stdout, stderr) {
+				var success = taskOptions.parseResult(stdout) || false;
+				self.dispatch({
+					type: 'result',
+					agent: self,
+					opts: taskOptions,
+					success: success,
+					result: stdout
+				});
+			});
 		},
 		ping: function(uri,opts) {			
 			if (!opts) opts = {};
@@ -138,19 +155,27 @@ advisor.agent.prototype._construct = function(opts)
 	this.run = function(opts)
 	{
 		if (!opts) opts = {};
-		
 		if (!this.type) throw new Error('Agent type not specified');
+
+		var task = function() {};
+		var interval = opts.freq || freq;
+
 		switch(this.type)
 		{
 			case advisor.agent.type.HTTP:
-				tasks.http(opts.uri || this.uri, opts);
+				task = function() { tasks.http(opts.uri || self.uri, opts); };
 			break;
 			case advisor.agent.type.PING:
-				tasks.ping(opts.uri || this.uri, opts);
+				task = function() { tasks.ping(opts.uri || self.uri, opts);	};
+			break;
+			case advisor.agent.type.CURL:
+				task = function() { tasks.curl(opts.uri || self.uri, opts); };
 			break;
 			default:
 				throw new Error('Agent type out of range.');
 		}
+		if (interval > 0) setInterval(task, interval);
+		else task();
 	};
 	
 	setopts(opts || {});
@@ -159,6 +184,33 @@ advisor.agent.prototype._construct = function(opts)
 advisor.main = function()
 {
     var app = advisor.getInstance();
+    var report = [
+    	{
+    		title: 'Tests for http://www.nsiautostore.com',
+    		agents: [
+    			new advisor.agent({
+					type: advisor.agent.type.HTTP,
+					name: "Wordpress",
+					uri: {
+						host: "http://www.nsiautostore.com",
+						port: 80,
+						path: "/"
+					},
+					freq: 10000
+			    }),
+    			new advisor.agent({
+					type: advisor.agent.type.HTTP,
+					name: "Wordpress",
+					uri: {
+						host: "http://www.nsiautostore.com",
+						port: 80,
+						path: "/xmlrpc.php"
+					},
+					freq: 10000
+			    })			    
+    		]
+    	}
+    ];
     var www = new advisor.agent({
 		type: advisor.agent.type.HTTP,
 		name: "primary www check",
@@ -177,21 +229,36 @@ advisor.main = function()
 			port: 80,
 			path: "/"
 		},
-		freq: 2000
+		freq: -1
     });
 
 	var ping = new advisor.agent({
-		type: advisor.agent.type.HTTP,
+		type: advisor.agent.type.PING,
 		name: "primary ping check",
 		uri: "nsiautostore.com",
-		freq: 3
+		freq: 1000
+    });
+
+	var curl = new advisor.agent({
+		type: advisor.agent.type.CURL,
+		name: "Curl check",
+		uri: "http://www.nsiautostore.com",
+		parseResult: function(res) { if (res != "") return true; else return false; },
+		freq: 2000
+    });
+	var ftp = new advisor.agent({
+		type: advisor.agent.type.CURL,
+		name: "FTP Check",
+		uri: "ftp://courier.nsius.com/6.00/Downloaders/AutoStoreEnterprise6.exe",
+		args: "-u 'swupdateadmin:nsi$sw$update$admin!*'",
+		freq: 2000
     });
 
 	// Can't run ping on cloud9 - security
-	//app.registerAgent(ping);
-	
-	app.registerAgent(www);
-	app.registerAgent(dnn);
+	app.registerAgent(curl);
+	//app.registerAgent(ftp);
+	//app.registerAgent(www);
+	//app.registerAgent(dnn);
 };
 
 advisor.main();
