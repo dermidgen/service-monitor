@@ -8,11 +8,13 @@ var http = require('http');
 var sys = require('util');
 var exec = require('child_process').exec;
 var nodemailer = require('nodemailer');
+var fs = require('fs');
 
-var advisor = ook.Class().mixin(ook.observable);
+advisor = ook.Class().mixin(ook.observable);
 advisor.prototype._construct = function()
 {
   console.log('Server Starting');
+  var self = this;
   
   var server = function()
   {
@@ -44,7 +46,7 @@ advisor.prototype._construct = function()
 	    nodemailer.send_mail(
 	        // e-mail options
 	        {
-	            sender: 'dgraham@nsiautostore.com',
+	            sender: 'good.midget@nsiautostore.com',
 	            to:'good.midget@gmail.com',
 	            subject:'Service Monitor Alert!',
 	            html: '<p><b>ALERT:</b> a service has failed</p><br/><pre>' + message + '</pre>',
@@ -61,22 +63,27 @@ advisor.prototype._construct = function()
 	{
 		var l = {
 			result: function(e){
-				//console.log(e.agent.name + " - " + e.type + " - " + e.result);
-				if (e.success === false) alert(e.agent.name + " - " + e.type + " - " + e.result);
+				self.dispatch({type:'result',agent:agent,result:e.result});
 			}
 		};
 		agent.addListener('result',l.result);
 		agent.run();
 	};
 
-  server();
+	this.loadConfig = function(filename)
+	{
+		console.log('Loading Config: '+filename);
+		require('./run/'+filename);
+	};
+
+	server();
 };
 
 advisor.instance = null;
 advisor.getInstance = function()
 {
-  if (!advisor.instance) advisor.instance = new advisor();
-  return advisor.instance;
+	if (!advisor.instance) advisor.instance = new advisor();
+	return advisor.instance;
 };
 
 advisor.agent = ook.Class().mixin(ook.observable);
@@ -183,82 +190,9 @@ advisor.agent.prototype._construct = function(opts)
 
 advisor.main = function()
 {
-    var app = advisor.getInstance();
-    var report = [
-    	{
-    		title: 'Tests for http://www.nsiautostore.com',
-    		agents: [
-    			new advisor.agent({
-					type: advisor.agent.type.HTTP,
-					name: "Wordpress",
-					uri: {
-						host: "http://www.nsiautostore.com",
-						port: 80,
-						path: "/"
-					},
-					freq: 10000
-			    }),
-    			new advisor.agent({
-					type: advisor.agent.type.HTTP,
-					name: "Wordpress",
-					uri: {
-						host: "http://www.nsiautostore.com",
-						port: 80,
-						path: "/xmlrpc.php"
-					},
-					freq: 10000
-			    })			    
-    		]
-    	}
-    ];
-    var www = new advisor.agent({
-		type: advisor.agent.type.HTTP,
-		name: "primary www check",
-		uri: {
-			host: "www.nsiautostore.com",
-			port: 80,
-			path: "/"
-		},
-		freq: 10000
-    });
-    var dnn = new advisor.agent({
-		type: advisor.agent.type.HTTP,
-		name: "dnn www check",
-		uri: {
-			host: "74.208.44.64",
-			port: 80,
-			path: "/"
-		},
-		freq: -1
-    });
-
-	var ping = new advisor.agent({
-		type: advisor.agent.type.PING,
-		name: "primary ping check",
-		uri: "nsiautostore.com",
-		freq: 1000
-    });
-
-	var curl = new advisor.agent({
-		type: advisor.agent.type.CURL,
-		name: "Curl check",
-		uri: "http://www.nsiautostore.com",
-		parseResult: function(res) { if (res != "") return true; else return false; },
-		freq: 2000
-    });
-	var ftp = new advisor.agent({
-		type: advisor.agent.type.CURL,
-		name: "FTP Check",
-		uri: "ftp://courier.nsius.com/6.00/Downloaders/AutoStoreEnterprise6.exe",
-		args: "-u 'swupdateadmin:nsi$sw$update$admin!*'",
-		freq: 2000
-    });
-
-	// Can't run ping on cloud9 - security
-	app.registerAgent(curl);
-	//app.registerAgent(ftp);
-	//app.registerAgent(www);
-	//app.registerAgent(dnn);
+	var app = advisor.getInstance();
+	app.loadConfig('default.js');
+	app.loadConfig('custom.js');
 };
 
 advisor.main();
